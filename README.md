@@ -2,7 +2,7 @@
 
 **lrp** — lastread sync protocol.
 
-Русская версия: [lrs.ru.md](lrs.ru.md).
+Русская версия: [README_RU.md](README_RU.md).
 
 At home the node keeps the echoes in Squish and you read them in GoldED.
 On the road or at work you read the same mail in FidoMailMobile, set up

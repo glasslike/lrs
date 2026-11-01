@@ -2,7 +2,7 @@
 
 **lrp** — lastread sync protocol.
 
-English version: [lrs.md](lrs.md).
+English version: [README.md](README.md).
 
 На ноде базы в Squish, дома почту читаешь в GoldED. В пути или на работе
 ту же почту читаешь в FidoMailMobile: редактор сидит на адресе поинта и

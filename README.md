@@ -72,7 +72,6 @@ file.
 ```
 lrs sync [-c lrs.conf]
 lrs show [-c lrs.conf]
-lrs selftest
 ```
 
 `sync` is the pass described above. Exit status 0 means it finished.
@@ -82,9 +81,6 @@ inbound for the next run. Status 2 means the command was not recognized.
 `show` prints where the cursor is: the echo tag, the local message
 number, and the MSGID. It does not take anything in, send anything out,
 or move a cursor.
-
-`selftest` runs the built-in checks on temporary bases. It does not read
-a live `lrs.conf` and does not touch live echoes.
 
 Text goes to stderr. If `log` is set, the same lines are appended to
 that file with the local time in front.

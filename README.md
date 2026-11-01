@@ -23,6 +23,8 @@ on both ends. Any other third-party editor, not GoldED, that cannot run
 has to meet is [lrp](#lrp--lastread-sync-protocol), later in this manual.
 The node still runs `lrs`.
 
+How to compile it is in [BUILD.md](BUILD.md).
+
 ## Running
 
 When new mail is coming in, `lrs sync` goes in the batch after the

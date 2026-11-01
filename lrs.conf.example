@@ -1,0 +1,88 @@
+# lrs — last read sync between a node and its point.
+# Lines starting with # are comments. Paths may be quoted if they contain spaces.
+# The area path is the base name without an extension. An echo may be
+# Squish (.sqd .sqi .sql) or JAM (.jhr .jdx .jlr). The two sides of the
+# link do not have to use the same format, and one machine may mix them.
+
+# This machine's FTN address. It is written into every .lrs file as "from".
+# Both partners are in the same zone, so the zone is not used to pick
+# an outbound directory.
+address 2:203/910.1
+
+# The other side of this link. Import accepts a snapshot only when its
+# "from" line is this address. The .flo and .bsy names are computed from
+# this address the way qico does: net and node as four hex digits, and for
+# a point NNNNFFFF.pnt/PPPPPPPP.flo next to NNNNFFFF.pnt/PPPPPPPP.bsy.
+# 2:203/910 is 00cb038e.flo. 2:203/910.1 is 00cb038e.pnt/00000001.flo.
+peer 2:203/910
+
+# Which slot in the Squish .sql file is ours. GoldED's squishuserno,
+# zero by default: the first 4-byte lastread in the file.
+squishuser 0
+
+# GoldED user name for a JAM .jlr record. Matched by the JAM CRC of the
+# name (and by the same CRC without the final complement, which is what
+# GoldED stores). Only LastReadMsg is updated. HighReadMsg is left as
+# GoldED wrote it. If this line is omitted and the .jlr file has exactly
+# one user, that record is used. No record yet, or several users and
+# no name: that echo's cursor waits, and the rest of the sync still runs.
+# It is applied once GoldED has created the single record, or once this
+# name is set.
+# jamuser Sysop
+
+# Where the mailer drops received files. Sync reads *.lrs from here
+# after the tosser has run, then deletes the ones it accepted.
+inbound D:/fido/inbound
+
+# The one outbound directory for this link. Sync writes the .lrs file
+# here and the flow line into the .flo derived from the peer address,
+# in this same directory (or in its NNNNFFFF.pnt subdirectory when the
+# peer is a point). A snapshot name is 8.3: c0000001.lrs on the point,
+# s0000001.lrs on the node. The seven digits are the send counter.
+outbound D:/fido/outbound
+
+# Our own memory: generations, the last queued filename, and cursors
+# that could not be applied yet. The file is JSON. GoldED does not
+# read it. A missing file is the first run.
+state D:/fido/lrs.state
+
+# Optional. Uncomment to append the same messages to a file. Each line
+# starts with the local time. Without this key nothing is written to a
+# log file; the text still goes to stderr.
+# log D:/fido/lrs.log
+
+# Directory of echo bases. A short echoarea line uses echodir/<tag>
+# as the base name, without .sqd or .jhr. lrs opens whichever complete
+# pair is there. Both pairs for one tag are left unused.
+# On the point, lrs sync appends an echoarea line for every *.sqd or
+# *.jhr here
+# that is not listed yet and, in the same run, queues one snapshot that
+# asks the node for those positions. It also appends a tag that arrived
+# in the node's snapshot when that base is here. On the node (server yes),
+# sync appends a tag only when the point's snapshot names a base
+# that exists here, and removes a tag the point's newest snapshot
+# no longer lists. The message base on the node is left in place.
+# Added lines go in the block at the end of this file.
+echodir D:/fido/msg
+
+# Set only on the node. The node keeps a lastread it already has when
+# the point has not yet applied it. The point leaves this line out, so
+# the node's snapshot replaces a cursor written by merely opening the area.
+# It also selects the snapshot name: sNNNNNNN.lrs with this line, and
+# cNNNNNNN.lrs without it.
+# server yes
+
+# Echoes. [areas] is the section header and it ends the file.
+# lrs appends echoarea lines under it. Blank lines inside the block
+# are removed the next time lrs adds an area. If the header is deleted,
+# the next add puts it back in front of the echoarea lines already at
+# the end of the file. Settings above it are not rewritten.
+#
+# Tag only. The base is echodir/<tag>, Squish or JAM:
+# echoarea RU.GOLDED
+#
+# Tag and an explicit base path, without an extension. Squish or JAM:
+# echoarea OTHER D:/fido/msg/custom
+[areas]
+echoarea RU.GOLDED
+echoarea OTHER D:/fido/msg/custom

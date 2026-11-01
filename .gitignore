@@ -1,0 +1,11 @@
+build/
+lrs-selftest/
+*.obj
+*.exe
+*.ilk
+*.pdb
+
+# Local stress-test runs and copied message bases. The .c sources stay.
+Testing/run/
+Testing/msgbasedir_*/
+Testing/*.log

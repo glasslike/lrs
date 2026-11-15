@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.10)
 # development tree ends in "-dev"; configure then appends -g and the
 # git abbreviation, so the ident reads 0.1.1-dev-g0123456. CMake's
 # project(VERSION) accepts only numbers, so the string lives here.
-set(LRS_VERSION "0.1.0-dev")
+set(LRS_VERSION "0.1.1-dev")
 set(LRS_NAME "lrs")
 
 project(lrs C)

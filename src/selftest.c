@@ -664,6 +664,215 @@ static void test_areas(void)
     }
 }
 
+/* A question in the newest snapshot forgets the client counter for
+ * that echo and ignores an older, higher generation sitting beside it.
+ * A real cursor in the newest snapshot does not: a stale question in
+ * an older file must not make a generation we have already seen look
+ * new. A "still subscribed" line is not a question either. */
+static int write_snap(const char *path, const LrpFile *file)
+{
+    char *text = lrp_file_format(file);
+    int rc;
+    if (!text)
+        return -1;
+    rc = write_bytes(path, (const unsigned char *)text, strlen(text));
+    free(text);
+    return rc;
+}
+
+static int add_echo(LrpFile *file, const char *tag, uint32_t gen, uint32_t seen,
+    int64_t updated, int request, const char *msgid)
+{
+    LrpArea a;
+    memset(&a, 0, sizeof a);
+    snprintf(a.tag, sizeof a.tag, "%s", tag);
+    snprintf(a.msgid, sizeof a.msgid, "%s", msgid && msgid[0] ? msgid : "-");
+    a.date = -1;
+    a.gen = gen;
+    a.seen = seen;
+    a.updated = updated;
+    a.request = request;
+    return lrp_file_add(file, &a);
+}
+
+static uint32_t area_peergen(const char *state, const char *tag)
+{
+    State st;
+    StArea *a;
+    uint32_t gen = 0xffffffffu;
+    memset(&st, 0, sizeof st);
+    if (state_load(state, &st) != 0)
+        return gen;
+    a = state_area(&st, tag);
+    if (a)
+        gen = a->peergen;
+    state_free(&st);
+    return gen;
+}
+
+static uint32_t area_msgno(const char *base)
+{
+    Sq sq;
+    uint32_t msgno = 0xffffffffu;
+    if (sq_open(&sq, base, 0, 0) != 0)
+        return msgno;
+    if (sq_read_lastread(&sq, &msgno, NULL) != 0)
+        msgno = 0xffffffffu;
+    sq_close(&sq);
+    return msgno;
+}
+
+static void test_reask(void)
+{
+    Config cfg;
+    LrpFile file;
+    Sq sq;
+    const char *conf = "lrs-selftest/reask/node.conf";
+    const char *state = "lrs-selftest/reask/node.state";
+    const char *one = "lrs-selftest/reask/one/echo";
+    const char *two = "lrs-selftest/reask/two/echo";
+    const char *msg1 = "<1187509996@ddt.demos.su> 93d75b8f";
+    const char *msg2 = "FIRST 00000001";
+    char path[LRP_PATH];
+    char *text;
+    mkdir_one("lrs-selftest");
+    mkdir_one("lrs-selftest/reask");
+    mkdir_one("lrs-selftest/reask/in");
+    mkdir_one("lrs-selftest/reask/out");
+    mkdir_one("lrs-selftest/reask/one");
+    mkdir_one("lrs-selftest/reask/two");
+    mkdir_one("lrs-selftest/reask/echos");
+    /* A previous run leaves state and a queued snapshot behind. Those
+     * would make this pass treat a fresh client generation as a replay. */
+    remove("lrs-selftest/reask/node.state");
+    remove("lrs-selftest/reask/in/c0000001.lrs");
+    remove("lrs-selftest/reask/in/c0000003.lrs");
+    remove("lrs-selftest/reask/in/c0000004.lrs");
+    remove("lrs-selftest/reask/in/c0000005.lrs");
+    remove("lrs-selftest/reask/in/c0000006.lrs");
+    remove("lrs-selftest/reask/in/c0000007.lrs");
+    remove("lrs-selftest/reask/in/c0000008.lrs");
+    remove("lrs-selftest/reask/out/s0000001.lrs");
+    remove("lrs-selftest/reask/out/s0000002.lrs");
+    remove("lrs-selftest/reask/out/00cb038e.pnt/00000001.flo");
+    expect(build_base("lrs-selftest/reask/one") == 0, "reask base one");
+    expect(build_base("lrs-selftest/reask/two") == 0, "reask base two");
+    expect(sq_open(&sq, one, 0, 0) == 0 && sq_write_lastread(&sq, 2) == 0, "seat one on msg 2");
+    sq_close(&sq);
+    expect(sq_open(&sq, two, 0, 0) == 0 && sq_write_lastread(&sq, 2) == 0, "seat two on msg 2");
+    sq_close(&sq);
+    expect(write_bytes(conf, (const unsigned char *)
+        "address 2:203/910\n"
+        "peer 2:203/910.1\n"
+        "server yes\n"
+        "inbound lrs-selftest/reask/in\n"
+        "outbound lrs-selftest/reask/out\n"
+        "state lrs-selftest/reask/node.state\n"
+        "echodir lrs-selftest/reask/echos\n"
+        "[areas]\n"
+        "echoarea ONE lrs-selftest/reask/one/echo\n"
+        "echoarea TWO lrs-selftest/reask/two/echo\n",
+        strlen("address 2:203/910\n"
+        "peer 2:203/910.1\n"
+        "server yes\n"
+        "inbound lrs-selftest/reask/in\n"
+        "outbound lrs-selftest/reask/out\n"
+        "state lrs-selftest/reask/node.state\n"
+        "echodir lrs-selftest/reask/echos\n"
+        "[areas]\n"
+        "echoarea ONE lrs-selftest/reask/one/echo\n"
+        "echoarea TWO lrs-selftest/reask/two/echo\n")) == 0, "reask config");
+
+    /* Both echoes already exchanged. The node has seen client gen 4. */
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 4, 1, 100, 0, msg1) == 0, "seed one");
+    expect(add_echo(&file, "TWO", 4, 1, 100, 0, msg1) == 0, "seed two");
+    expect(write_snap("lrs-selftest/reask/in/c0000001.lrs", &file) == 0, "write seed");
+    lrp_file_free(&file);
+    expect(config_load(conf, &cfg) == 0, "load seed config");
+    expect(cmd_sync(&cfg) == 0, "sync seed");
+    config_free(&cfg);
+    expect(area_peergen(state, "ONE") == 4 && area_peergen(state, "TWO") == 4, "seed peergen 4");
+    expect(area_msgno(one) == 1 && area_msgno(two) == 1, "seed landed on msg 1");
+
+    /* Newest file asks again for ONE and continues TWO. An older file
+     * still offers ONE a higher generation, which must not win. */
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 9, 1, 300, 0, msg2) == 0, "stale one");
+    expect(add_echo(&file, "TWO", 4, 1, 100, 0, msg1) == 0, "stale two");
+    expect(write_snap("lrs-selftest/reask/in/c0000003.lrs", &file) == 0, "write stale");
+    lrp_file_free(&file);
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 0, 0, -1, 1, "-") == 0, "reask one");
+    expect(add_echo(&file, "TWO", 5, 1, 200, 0, msg2) == 0, "continue two");
+    expect(write_snap("lrs-selftest/reask/in/c0000004.lrs", &file) == 0, "write reask");
+    lrp_file_free(&file);
+    expect(config_load(conf, &cfg) == 0, "load reask config");
+    expect(cmd_sync(&cfg) == 0, "sync reask");
+    config_free(&cfg);
+    expect(area_peergen(state, "ONE") == 0, "question clears ONE");
+    expect(area_msgno(one) == 1, "question leaves ONE lastread");
+    expect(area_peergen(state, "TWO") == 5, "TWO keeps its counter");
+    expect(area_msgno(two) == 2, "TWO follows its new cursor");
+    expect(path_join(path, sizeof path, "lrs-selftest/reask/out", "s0000001.lrs") == 0, "reply path");
+    text = read_all(path, NULL);
+    expect(text && strstr(text, "\"tag\":\"ONE\"") != NULL, "reply names ONE");
+    expect(text && strstr(text, msg1) != NULL, "reply carries ONE's current msgid");
+    free(text);
+
+    /* The client's first reading after the question is generation 1.
+     * TWO repeats a generation the node has already applied. */
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 1, 1, 400, 0, msg2) == 0, "fresh gen 1");
+    expect(add_echo(&file, "TWO", 5, 1, 200, 0, msg2) == 0, "TWO replay");
+    expect(write_snap("lrs-selftest/reask/in/c0000005.lrs", &file) == 0, "write gen 1");
+    lrp_file_free(&file);
+    expect(config_load(conf, &cfg) == 0, "load gen 1 config");
+    expect(cmd_sync(&cfg) == 0, "sync gen 1");
+    config_free(&cfg);
+    expect(area_peergen(state, "ONE") == 1, "gen 1 is new after the question");
+    expect(area_msgno(one) == 2, "gen 1 moves ONE");
+    expect(area_peergen(state, "TWO") == 5 && area_msgno(two) == 2, "replay of TWO changes nothing");
+
+    /* A generation we have already seen stays ignored when an older
+     * file in the same inbound is a question. The newest record is a
+     * cursor, so the question does not clear the counter. */
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 0, 0, -1, 1, "-") == 0, "old question");
+    expect(add_echo(&file, "TWO", 5, 1, 200, 0, msg2) == 0, "old two");
+    expect(write_snap("lrs-selftest/reask/in/c0000006.lrs", &file) == 0, "write old question");
+    lrp_file_free(&file);
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 1, 1, 500, 0, msg1) == 0, "already seen gen");
+    expect(add_echo(&file, "TWO", 5, 1, 200, 0, msg2) == 0, "two stays");
+    expect(write_snap("lrs-selftest/reask/in/c0000007.lrs", &file) == 0, "write seen gen");
+    lrp_file_free(&file);
+    expect(config_load(conf, &cfg) == 0, "load seen-gen config");
+    expect(cmd_sync(&cfg) == 0, "sync seen gen");
+    config_free(&cfg);
+    expect(area_peergen(state, "ONE") == 1, "old question does not clear");
+    expect(area_msgno(one) == 2, "already seen gen does not move ONE");
+
+    /* The line that only keeps the subscription is not a question. */
+    memset(&file, 0, sizeof file);
+    snprintf(file.from, sizeof file.from, "%s", "2:203/910.1");
+    expect(add_echo(&file, "ONE", 0, 0, -1, 0, "-") == 0, "still subscribed");
+    expect(add_echo(&file, "TWO", 5, 1, 200, 0, msg2) == 0, "two listed");
+    expect(write_snap("lrs-selftest/reask/in/c0000008.lrs", &file) == 0, "write listed");
+    lrp_file_free(&file);
+    expect(config_load(conf, &cfg) == 0, "load listed config");
+    expect(cmd_sync(&cfg) == 0, "sync listed");
+    config_free(&cfg);
+    expect(area_peergen(state, "ONE") == 1 && area_msgno(one) == 2, "subscription line keeps ONE");
+    expect(area_peergen(state, "TWO") == 5, "subscription line keeps TWO");
+}
+
 int selftest(void)
 {
     g_fail = 0;
@@ -675,6 +884,7 @@ int selftest(void)
     test_jam();
     test_log();
     test_areas();
+    test_reask();
     if (g_fail) {
         fprintf(stderr, "selftest: %d failure%s\n", g_fail, g_fail == 1 ? "" : "s");
         return 1;

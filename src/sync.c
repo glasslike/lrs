@@ -240,7 +240,9 @@ static int apply_remote(const Config *cfg, const CfgArea *area, StArea *st,
     /* A request is not a cursor. The server has already baselined its
      * own lastread. That position matches state, so export would
      * otherwise see no movement and queue nothing. reply forces the
-     * same sync to attach the stored cursor. */
+     * same sync to attach the stored cursor. When the request is the
+     * newest snapshot's record, the caller has already forgotten the
+     * client generation counter. The reply is still our stored cursor. */
     if (request) {
         log_msg("%s: position requested", area->tag);
         if (cfg->server && st->gen > 0)
@@ -655,6 +657,41 @@ static int better_cand(const Cand *a, const Cand *b)
     return addr_cmp_str(a->from, b->from) > 0;
 }
 
+/* Best record for one tag inside one snapshot. Higher generation wins,
+ * then the later timestamp. Records in a single file share an address,
+ * so the address tie-break used for candidates does not apply. */
+static const LrpArea *best_in_file(const LrpFile *file, const char *tag)
+{
+    const LrpArea *best = NULL;
+    size_t i;
+    if (!file)
+        return NULL;
+    for (i = 0; i < file->n; i++) {
+        const LrpArea *a = &file->area[i];
+        if (str_icmp(a->tag, tag) != 0)
+            continue;
+        if (!best || a->gen > best->gen || (a->gen == best->gen && a->updated > best->updated))
+            best = a;
+    }
+    return best;
+}
+
+/* A question in the client's newest snapshot is the whole statement
+ * for that echo. Older cursor records still in inbound, and a cursor
+ * parked because the base could not take it, belong to the previous
+ * statement and must not outvote the question: their generation is
+ * higher, so the ordinary "keep the newer generation" pick would apply
+ * them and the question would never be seen. NULL when the newest
+ * file's winning record is a real cursor, a "still subscribed" line,
+ * or the tag is not in that file. */
+static const LrpArea *newest_position_request(const LrpFile *member, const char *tag)
+{
+    const LrpArea *best = best_in_file(member, tag);
+    if (!best || !best->request)
+        return NULL;
+    return best;
+}
+
 /* Record the on-disk lastread as generation 1 before applying a peer
  * that has never seen us. Without this, a server area that is not in
  * the state yet looks unpublished (gen 0) and the downlink's first
@@ -1001,6 +1038,7 @@ static int cmd_import(Config *cfg)
     for (i = 0; i < cfg->n; i++) {
         StArea *sa = state_area(&st, cfg->area[i].tag);
         Cand best;
+        const LrpArea *reask = NULL;
         int have = 0;
         if (!sa) {
             lrp_file_free(&member);
@@ -1011,6 +1049,20 @@ static int cmd_import(Config *cfg)
             strlist_free(&names);
             state_free(&st);
             return 1;
+        }
+        /* A question in the newest file restarts the client's counter
+         * for this echo only. Our lastread and our own generation stay:
+         * the answer is the place we already stand. Zero the counter
+         * before folding a local move, so that move records seen 0
+         * rather than a client generation we just declared forgotten.
+         * Other echoes in the same file are judged on their own. */
+        if (cfg->server && have_member)
+            reask = newest_position_request(&member, cfg->area[i].tag);
+        if (reask) {
+            if (sa->peergen != 0 || sa->pending)
+                log_msg("%s: client asked again, forget its generation", cfg->area[i].tag);
+            sa->peergen = 0;
+            sa->pending = 0;
         }
         /* The lastread may have moved since the previous sync. Decide
          * against that position, not against the generation we last
@@ -1026,7 +1078,15 @@ static int cmd_import(Config *cfg)
             return 1;
         }
         memset(&best, 0, sizeof best);
-        for (k = 0; k < nc; k++) {
+        /* The question is the only record applied for this echo. A
+         * higher generation from an older file would win best-of and
+         * the counter we just cleared would be raised again. */
+        if (reask) {
+            snprintf(best.from, sizeof best.from, "%s", member.from);
+            best.area = *reask;
+            have = 1;
+        }
+        for (k = 0; !reask && k < nc; k++) {
             if (str_icmp(cands[k].area.tag, cfg->area[i].tag) != 0)
                 continue;
             if (!have || better_cand(&cands[k], &best)) {
@@ -1034,7 +1094,7 @@ static int cmd_import(Config *cfg)
                 have = 1;
             }
         }
-        if (sa->pending) {
+        if (!reask && sa->pending) {
             Cand pend;
             memset(&pend, 0, sizeof pend);
             snprintf(pend.from, sizeof pend.from, "%s", sa->pend_from);

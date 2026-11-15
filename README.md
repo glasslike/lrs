@@ -301,6 +301,14 @@ The node answers with its own cursor in the same pass. The counter does
 not grow because of the answer. The node itself does not send lines
 without a cursor: the point owns the list.
 
+When that question is the winning record for the echo in the client's
+newest snapshot, the node forgets how far this client's counter had
+gone. A cursor it had parked for the echo is dropped, and an older
+snapshot of the same echo still sitting in inbound is not applied.
+The node's own lastread stays, and the answer is that place. A line
+with no cursor and `request` 0 only says the echo is still subscribed.
+It does not clear the counter.
+
 ## Local store of the instance
 
 The local store is `lrs.state`. If the client software is not `lrs`, the
@@ -363,8 +371,11 @@ the place a rescan left behind.
 Several records may arrive for one echo, or an earlier one never got
 written. One is kept: newer generation, then later time, then greater
 address. [Who wins](#who-wins) decides the rest. "Where is the cursor"
-is not a dispute. The node just answers. Files that were taken in are
-deleted.
+is not a dispute. The node just answers. If that question is the
+winning record in the client's newest snapshot, it is the record that
+is kept: an older generation in inbound does not outvote it, and the
+client counter stored for the echo returns to zero before the answer
+is made. Files that were taken in are deleted.
 
 Then the outbound file. On a new echo the point asks once. If a file is
 written for some other reason, the question stays in it.
@@ -502,6 +513,16 @@ After that, reading on the point goes out as generation 1, and the file
 shows that the node's answer was already in. Reading on the node goes
 out as generation 2. Until the node has taken a cursor from the point,
 its snapshot says `seen` 0.
+
+A client that lost its memory and was installed again uses this same
+exchange. The file is a question, with no MSGID. The node already
+knows the echo, so it does not record its lastread a second time. It
+keeps the place and the generation it has now and forgets how far the
+previous client counter had gone. When that generation is already there,
+the answer is that place. The client's next reading is generation 1,
+and that 1 is new. The node's
+next reading is one past the generation it already had. That is 2
+only when the question was what first recorded the echo.
 
 ## When both ends were reading
 

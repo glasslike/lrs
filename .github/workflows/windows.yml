@@ -1,0 +1,103 @@
+# The build does not run on a branch push. Two ways to start it:
+#   Actions → Build on Windows → Run workflow, then pick the branch.
+#   Push a tag. This file is read from that tag, the tree is that commit,
+#   and the zips are attached to the release for the tag. The release is
+#   created by the job when the tag was pushed on its own.
+# The Run workflow button is listed only when this file is on the
+# default branch, and the chosen branch must contain this file too.
+#
+# Two MinGW-w64 toolchains, both msvcrt, so the exe loads on Windows XP
+# without the Universal CRT. win64 is MINGW64 (x86_64). win32 is MINGW32
+# (i686) and runs on 64-bit Windows through WoW64, which is how the
+# self-test is executed on this runner. The same files load on later
+# Windows. UCRT64 is a different C library and is not this drop.
+# See .github/scripts/build-windows.sh.
+
+name: Build on Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Build on Windows (${{ matrix.tag }})
+    # Pinned, not windows-latest. The host only supplies the runner and
+    # MSYS2; the exe is built by the MinGW in that MSYS2, so the drop does
+    # not follow the image, but a move of the label should be a deliberate
+    # commit.
+    runs-on: windows-2022
+    # gh release upload needs to add assets. Manual runs only upload
+    # Actions artifacts, which the same token can do with contents: read,
+    # but one permission set covers both triggers.
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: win64
+            msystem: MINGW64
+            # Acknowledged. UCRT64 is the replacement MSYS2 names, and it
+            # does not load on Windows XP. This drop stays on msvcrt.
+            deprecation: msystem-mingw64
+            install: |
+              git
+              mingw-w64-x86_64-gcc
+              mingw-w64-x86_64-cmake
+              zip
+          - tag: win32
+            msystem: MINGW32
+            # Acknowledged. MSYS2 is retiring 32-bit and names no successor.
+            # win32 is the exe for 32-bit XP.
+            deprecation: msystem-mingw32
+            install: |
+              git
+              mingw-w64-i686-gcc
+              mingw-w64-i686-cmake
+              zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # MINGW64 and MINGW32 are the msvcrt environments. UCRT64 is the
+      # one MSYS2 recommends for new work, and it does not run on Windows XP.
+      # git is the MSYS2 package. The shell does not see Git for Windows:
+      # path-type minimal keeps that directory off PATH, and the zip name
+      # is read with git after the build.
+      - name: Install the msvcrt toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          suppress-deprecation-warnings: ${{ matrix.deprecation }}
+          install: ${{ matrix.install }}
+
+      - name: Build and pack
+        shell: msys2 {0}
+        env:
+          LRS_WIN_TAG: ${{ matrix.tag }}
+        run: bash .github/scripts/build-windows.sh
+
+      # archive: false uploads the zip as itself. The default wraps it
+      # again, which would hide the name build-windows.sh put on the drop.
+      # With archive false the artifact name is the filename:
+      # lrs-<version>-win32-<sha>.zip or lrs-<version>-win64-<sha>.zip
+      - name: Upload binary drop
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.zip
+          archive: false
+          if-no-files-found: error
+
+      # A tag push has no release until one is created. Source archives
+      # appear with that release. This adds the binary drop beside them.
+      # Each bitness uploads its own zip; the names differ by win32 / win64.
+      # A hand run keeps the zip as an Actions artifact.
+      - name: Attach the drop to the release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/attach-release.sh

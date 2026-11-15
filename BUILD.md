@@ -91,3 +91,41 @@ build can omit it. The default prefix is `C:/Program Files/lrs`, and
 the program is `C:/Program Files/lrs/bin/lrs.exe`. Another directory
 is `--prefix` on this command, or `-DCMAKE_INSTALL_PREFIX` when
 configuring.
+
+## Published binaries
+
+GitHub Actions packs a binary drop. Nothing runs on a branch push.
+Start one by hand (Actions, then the workflow, then Run workflow),
+or push a tag. Every release workflow then builds that commit, and the
+zips are attached to the release for the tag. Pushing the tag is enough:
+the release is created if it does not exist yet.
+
+Each zip holds one directory. Inside it: `lrs` (or `lrs.exe`),
+`lrs.conf.example`, the two READMEs, `LICENSE`, `file_id.diz`, and
+`requirements.txt`. The diz is the short BBS description. The
+requirements file lists the shared libraries that binary was linked
+against.
+
+The name is `lrs-<version>-<system>-<arch>-<sha>.zip`. `<version>` is
+`LRS_VERSION` from `CMakeLists.txt`. `<sha>` is seven hex digits of
+the commit, with no `-g`.
+
+| Workflow | Archive |
+| --- | --- |
+| Build on Debian 12 | `lrs-<version>-debian12-amd64-<sha>.zip`, and the same for `arm64` |
+| Build on Debian 13 | `lrs-<version>-debian13-amd64-<sha>.zip`, and the same for `arm64` |
+| Build on NetBSD 11 | `lrs-<version>-netbsd11-amd64-<sha>.zip` |
+| Build on Windows | `lrs-<version>-win32-<sha>.zip` and `lrs-<version>-win64-<sha>.zip` |
+
+The Windows drops are MinGW-w64 linked to `msvcrt.dll`, with libgcc
+and winpthread inside the exe. That is the C library Windows XP already
+has, and the same files load on later Windows. They are not the
+Universal CRT, which a current MinGW on this machine links by default
+and which XP does not ship. `win32` is the 32-bit exe, for 32-bit XP
+and later. `win64` is the 64-bit exe, for XP x64 and later. The job
+refuses the zip if the exe imports anything besides `kernel32.dll` and
+`msvcrt.dll`, if one of those imports is a symbol XP does not export,
+or if the header asks for a newer Windows than XP.
+
+`Compile on Debian 12` only checks that the tree builds and the
+self-test passes. It does not pack a zip.

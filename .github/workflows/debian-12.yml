@@ -1,0 +1,86 @@
+# The build does not run on a branch push. Two ways to start it:
+#   Actions → Build on Debian 12 → Run workflow, then pick the branch.
+#   Push a tag. This file is read from that tag, the tree is that commit,
+#   and the zips are attached to the release for the tag. The release is
+#   created by the job when the tag was pushed on its own.
+# The Run workflow button is listed only when this file is on the
+# default branch, and the chosen branch must contain this file too.
+#
+# The job runs on a GitHub-hosted Ubuntu runner only so that checkout and
+# artifact upload have git and Node. The compile itself is debian:12.
+# amd64 is the runner's own platform. arm64 is the same debian:12 image
+# under QEMU: gcc, the self-test, and the finished binary are all
+# aarch64. Debian's name for that architecture is arm64; uname -m prints
+# aarch64. See .github/scripts/build-debian12.sh.
+
+name: Build on Debian 12
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Build on Debian 12 (${{ matrix.arch }})
+    # Pinned, not ubuntu-latest: that label moves to Ubuntu 26 on
+    # 2026-10-19. The host only supplies Docker and QEMU, so the drop
+    # does not depend on it, but the move should be a deliberate commit.
+    runs-on: ubuntu-24.04
+    # gh release upload needs to add assets. Manual runs only upload
+    # Actions artifacts, which the same token can do with contents: read,
+    # but one permission set covers both triggers.
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # binfmt_misc on the amd64 runner, so the arm64 container can execute
+      # the aarch64 binary that the self-test runs. The amd64 job does not
+      # need it.
+      - name: Register QEMU for arm64
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Build and pack in Debian 12
+        run: |
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "${{ github.workspace }}:/src" \
+            -w /src \
+            debian:12 \
+            bash /src/.github/scripts/build-debian12.sh
+
+      # archive: false uploads the zip as itself. The default wraps it
+      # again and names the download lrs-debian12-<arch>.zip, which is
+      # not the name build-debian12.sh put on the drop. With archive
+      # false the artifact name is the filename:
+      # lrs-<version>-debian12-<arch>-<sha>.zip
+      - name: Upload binary drop
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.zip
+          archive: false
+          if-no-files-found: error
+
+      # A tag push has no release until one is created. Source archives
+      # appear with that release. This adds the binary drop beside them.
+      # Each architecture uploads its own zip; the names differ by
+      # amd64 / arm64. A hand run keeps the zip as an Actions artifact.
+      - name: Attach the drop to the release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/attach-release.sh

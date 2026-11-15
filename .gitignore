@@ -1,4 +1,5 @@
 build/
+dist/
 lrs-selftest/
 *.obj
 *.exe

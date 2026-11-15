@@ -48,6 +48,14 @@ if(UNIX)
     target_compile_definitions(lrs PRIVATE _POSIX_C_SOURCE=200809L)
 endif()
 
+# flock, LOCK_EX and LOCK_NB are not POSIX. NetBSD's sys/file.h leaves
+# them out when the only feature macro is _POSIX_C_SOURCE, so the
+# exclusive open of a Squish or JAM base fails to compile. _NETBSD_SOURCE
+# restores that interface and still provides the POSIX prototypes.
+if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
+    target_compile_definitions(lrs PRIVATE _NETBSD_SOURCE)
+endif()
+
 enable_testing()
 add_test(NAME selftest COMMAND lrs selftest)
 

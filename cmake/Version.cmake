@@ -9,8 +9,7 @@
 # two builds of the same configured tree print the same ident. It is
 # LRS_VERSION, or LRS_VERSION-g<abbrev> when the package version ends
 # in -dev and a commit id was found. A release string is left unchanged.
-# --version prints this. --help prints LRS_VERSION, so the help text
-# does not change on every commit.
+# --help prints this ident. There is no separate version flag.
 #
 # The abbreviation comes from git when the source tree is a checkout,
 # else from src/source-commit, which a source tarball can carry the way

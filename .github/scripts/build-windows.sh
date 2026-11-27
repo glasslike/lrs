@@ -226,9 +226,9 @@ step "Pack ${name}.zip"
 ( cd dist && zip -r -9 "${name}.zip" "$name" )
 
 echo "packed dist/${name}.zip"
-# The staged binary must actually start. --version prints the ident and
+# The staged binary must actually start. --help prints the ident and
 # exits 0. A missing DLL fails the job here, on the runner, which is a
 # newer Windows and would also start a UCRT build. The import check
 # above is what rejects that build.
-step "Run lrs.exe --version"
-"$stage/lrs.exe" --version
+step "Run lrs.exe --help"
+"$stage/lrs.exe" --help

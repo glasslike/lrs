@@ -36,7 +36,7 @@ apt-get install -y --no-install-recommends \
 
 # The runner owns the mount; git inside this container runs as root and
 # otherwise refuses the checkout ("dubious ownership"). The -dev suffix
-# in lrs --version comes from git during configure, so git must succeed.
+# in lrs --help comes from git during configure, so git must succeed.
 # git itself is not in the debian:12 image, so this is after apt-get.
 step "Trust the mounted git checkout"
 git config --global --add safe.directory "$(pwd)"
@@ -137,7 +137,7 @@ step "Pack ${name}.zip"
 ( cd dist && zip -r -9 "${name}.zip" "$name" )
 
 echo "packed dist/${name}.zip"
-# The staged binary must actually start. --version prints the ident and
+# The staged binary must actually start. --help prints the ident and
 # exits 0. A missing library or a bad link fails the job here.
-step "Run lrs --version"
-"$stage/lrs" --version
+step "Run lrs --help"
+"$stage/lrs" --help

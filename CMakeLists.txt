@@ -3,9 +3,9 @@ cmake_minimum_required(VERSION 3.10)
 # Package version. The only place to change it, the same role as
 # AC_INIT's version argument in qico. A release is "0.1.0". A
 # development tree ends in "-dev"; configure then appends -g and the
-# git abbreviation, so the ident reads 0.1.1-dev-g0123456. CMake's
+# git abbreviation, so the ident reads 0.1.2-dev-g0123456. CMake's
 # project(VERSION) accepts only numbers, so the string lives here.
-set(LRS_VERSION "0.1.1-dev")
+set(LRS_VERSION "0.1.2-dev")
 set(LRS_NAME "lrs")
 
 project(lrs C)

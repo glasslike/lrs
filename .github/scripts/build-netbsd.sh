@@ -32,7 +32,7 @@ step "Install NetBSD build packages"
 
 # The host owns the synced tree; git in the VM runs as another user and
 # would otherwise refuse it ("dubious ownership"). The -dev suffix in
-# lrs --version comes from git during configure, so git must succeed.
+# lrs --help comes from git during configure, so git must succeed.
 step "Trust the synced git checkout"
 git config --global --add safe.directory "$(pwd)"
 
@@ -137,7 +137,7 @@ step "Pack ${name}.zip"
 ( cd dist && zip -r -9 "${name}.zip" "$name" )
 
 echo "packed dist/${name}.zip"
-# The staged binary must actually start. --version prints the ident and
+# The staged binary must actually start. --help prints the ident and
 # exits 0. A missing library or a bad link fails the job here.
-step "Run lrs --version"
-"$stage/lrs" --version
+step "Run lrs --help"
+"$stage/lrs" --help

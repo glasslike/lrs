@@ -30,7 +30,7 @@ apt-get install -y --no-install-recommends \
 
 # The runner owns the mount; git inside this container runs as root and
 # otherwise refuses the checkout ("dubious ownership"). The -dev suffix
-# in lrs --version comes from git during configure, so git must succeed.
+# in lrs --help comes from git during configure, so git must succeed.
 # git itself is not in the debian:12 image, so this is after apt-get.
 step "Trust the mounted git checkout"
 git config --global --add safe.directory "$(pwd)"
@@ -43,5 +43,5 @@ cmake --build build -j"$(nproc)"
 step "Self-test"
 ctest --test-dir build --output-on-failure
 
-step "Run lrs --version"
-./build/lrs --version
+step "Run lrs --help"
+./build/lrs --help
